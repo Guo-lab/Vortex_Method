@@ -1,0 +1,14 @@
+# .clang-format configuration for C code
+Language: Cpp
+
+DerivePointerAlignment: false
+PointerAlignment: Right
+IndentWidth: 4
+TabWidth: 4
+ColumnLimit: 110
+
+AllowShortIfStatementsOnASingleLine: Always
+AllowShortLoopsOnASingleLine: true
+
+# Allow more blank lines between
+MaxEmptyLinesToKeep: 5
