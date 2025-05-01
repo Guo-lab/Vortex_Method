@@ -1,53 +1,44 @@
-#our makefile variables.   Good to place commonly changed variables
-# at the top of your makefile. Then follow with your rules.
-VPATH= . ../Writers ../RectArray ../fftTools ../timer 
-DIM=2
-HOME = ..
-system := $(shell uname)
-FFTWDIR = /usr/local
-FFTINCFLAGS = -I$(FFTWDIR)/include
-CFLAGS = -g -Wall
-osuffix:=$(DIM)D.o
-dsuffix:=$(DIM)D.d
-#CFLAGS = -O3 
-CFLAGS += -I. -I../Writers -I../timer -I../RectArray -I../fftTools -I../vortexMethod -DDIM=$(DIM)  -std=c++11 
-CFLAGS += $(FFTINCFLAGS)
-LIBS:=  -L$(FFTWDIR)/lib -lfftw3 -L../lib -lfft$(DIM)D -lfft1D
+# Makefile for Hockney directory
 
-#CXX = /Users/colella/Desktop/gcc-4.7-bin/usr/local/bin/g++ 
-CXX=g++
+include ../Make.include
 
-SRCFILES:= $(wildcard ../timer/*.cpp ../RectArray/*.cpp ../Writers/*.cpp Hockney.cpp)
-OBJS:=$(patsubst %.cpp,%.o, $(SRCFILES)) 
+VPATH= . $(WRITER_HOME) $(RMDA_HOME) $(TIMER_HOME) $(FFT_HOME)
 
-EOBJS:= $(addsuffix $(DIM)D.o, HockneyTest) 
+CFLAGS 		+= -w
+CFLAGS 		+= -I. -I$(WRITER_HOME) -I$(TIMER_HOME) -I$(RMDA_HOME) -I$(FFT_HOME) -I$(VORTEX_HOME) -DDIM=$(DIM)
 
-%.o: %.cpp GNUmakefile
-	$(CXX) -c $(CFLAGS) $< -o $@
-	$(CXX) -MM $(CFLAGS) $< > $*.d
+SRCFILES	:= $(wildcard $(TIMER_HOME)/*.cpp $(RMDA_HOME)/*.cpp $(WRITER_HOME)/*.cpp Hockney.cpp CutoffKernel.cpp)
+OBJS 		:=$(patsubst %.cpp, %.o, $(SRCFILES)) 
 
-%$(osuffix): %.cpp GNUmakefile
-	$(CXX) -c $(CFLAGS) $< -o $@
-	$(CXX) -MM $(CFLAGS) $< > $*$(dsuffix)
+EOBJS		:= $(addsuffix $(DIM)D.o, HockneyTest)
 
-../lib/libfft%D.a:$(wildcard ../fftTools/*.H ../fftTools/*.cpp)
-	cd ../fftTools;mkdir -p ../lib;make DIM=$* CXX=$(CXX) FFTWDIR=$(FFTWDIR)
 
-../lib/libfft1D.a:$(wildcard $(HOME)/fftTools/*.H $(HOME)/fftTools/*.cpp)
-	cd $(HOME)/fftTools;rm *.o;make libfft1D.a CXX=$(CXX) DIM=$(DIM) FFTWDIR=$(FFTWDIR) FFTINCFLAGS=$(FFTINCFLAGS)
+libfft%D.a:$(wildcard $(FFT_HOME)/*.H $(FFT_HOME)/*.cpp)
+	@echo "Compiling libfft$(DIM)D.a"
+	cd $(FFT_HOME);mkdir -p $(LIBS_LOCAL);make libfft$(DIM)D.a
 
-vars:
-	echo $(wildcard ../fftTools/*.H ../fftTools/*.cpp)
+libfft1D.a:$(wildcard $(FFT_HOME)/*.H $(FFT_HOME)/*.cpp)
+	@echo "Compiling libfft1D.a"
+	cd $(FFT_HOME);rm *.o;make libfft1D.a
 
-hockneyTest: GNUmakefile $(OBJS) HockneyTest$(osuffix) ../lib/libfft$(DIM)D.a ../lib/libfft1D.a
 
-	$(CXX) $(CFLAGS) $(FFTINCFLAGS) $(OBJS) $(LIBS) $(TOOLS) HockneyTest$(osuffix) -o testHockney$(DIM)D.exe
+all: hockneyTest
+
+hockneyTest: GNUmakefile $(OBJS) HockneyTest$(osuffix) libfft$(DIM)D.a libfft1D.a
+	@echo "Compiling HockneyTest"
+	$(CXX) $(CFLAGS) $(FFTW_INCFLAGS) $(OBJS) $(LIBS) HockneyTest$(osuffix) -o testHockney$(DIM)D.exe
 
 clean:
-	rm  *.o *.exe *.d *.vtk
+	rm -f *.o *.exe *.d *.vtk
 
 realclean:
-	rm  *.o *.exe *.d ../lib/*.a ../fftTools/*.o ../fftTools/*.d ../lib/*
+	rm -f *.o *.exe *.d $(LIBS_LOCAL)/*.a 
+	cd $(FFT_HOME);make clean
+	cd $(TIMER_HOME);make clean
+
 
 -include $(OBJS:.o=.d)
 -include $(EOBJS:.o=.d)
+
+
+

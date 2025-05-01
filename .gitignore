@@ -33,3 +33,5 @@
 
 .DS_Store
 .cache
+*.vtk
+movie.session*

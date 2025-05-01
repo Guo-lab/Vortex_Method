@@ -1,28 +1,35 @@
 #ifndef _FFTW1D_H_
 #define _FFTW1D_H_
+
+#include "fftw3.h"
 #include <cmath>
 #include <complex>
-#include <vector>
 #include <cstdio>
+#include <cstdlib>
 #include <iostream>
-#include "PowerItoI.H"
+#include <vector>
+
 #include "FFT1D.H"
-#include "fftw3.h"
+#include "PowerItoI.H"
 
-using namespace std;
+class FFTW1D : public FFT1D {
+  public:
+    /// @brief Default constructor.
+    FFTW1D(unsigned int a_M);
 
-class FFTW1D:public FFT1D
-{
-public:
-  FFTW1D(unsigned int a_M);
-  virtual ~FFTW1D();
-  virtual void forwardFFTCC(vector<complex<double> > & a_fHat, 
-                          const vector<complex<double> >& f) const;
-  virtual void inverseFFTCC(vector<complex<double> > & a_f, 
-                          const vector<complex<double> > & a_fHat) const;
-protected:
-  mutable vector<complex<double> > m_in;
-  vector<complex<double> > m_out;
-  fftw_plan m_forward, m_inverse;
+    /// @brief Destructor.
+    virtual ~FFTW1D();
+
+    virtual void forwardFFTCC(std::vector<std::complex<double>> &a_fHat,
+                              const std::vector<std::complex<double>> &f) const;
+
+    virtual void inverseFFTCC(std::vector<std::complex<double>> &a_f,
+                              const std::vector<std::complex<double>> &a_fHat) const;
+
+  protected:
+    mutable std::vector<std::complex<double>> m_in; ///< Input data for FFTW
+    std::vector<std::complex<double>> m_out;        ///< Output data for FFTW
+    fftw_plan m_forward, m_inverse;                 ///< FFTW plans
 };
-#endif
+
+#endif // _FFTW1D_H_

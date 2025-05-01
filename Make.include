@@ -1,0 +1,85 @@
+######### Common Makefile settings for all components ##########
+
+###############################
+# The current OS: Darwin.
+################################
+SYSTEM := $(shell uname)
+
+
+###############################
+# Project root directory
+################################
+HOME = /Users/guosiqi/Desktop/18-847_S25_Software_Development_for_Computational_Science_and_Engineering/18_847-PROJECT/Vortex_Method
+
+
+################################ 
+# Default dimension
+################################
+DIM ?= 2
+
+################################
+# Compiler settings
+################################
+CXX = g++
+CXX = clang++
+
+CFLAGS += -std=c++11 -Wall -DDIM=$(DIM)
+ifeq ($(DEBUG), 1)
+    CFLAGS += -g -DDEBUG
+else
+    CFLAGS += -O3
+endif
+ifdef ANIMATION
+    CFLAGS += -DANIMATION
+endif
+ifeq ($(CXX), clang++)
+  CFLAGS += -stdlib=libc++
+endif
+
+################################
+# DIR settings
+################################
+WRITER_HOME 	= $(HOME)/Writers
+TIMER_HOME 		= $(HOME)/timer
+FFT_HOME 		= $(HOME)/fftTools
+RMDA_HOME 		= $(HOME)/RectArray
+LIBS_LOCAL 		= $(HOME)/lib
+HOCKNEY_HOME 	= $(HOME)/Hockney
+VORTEX_HOME 	= $(HOME)/vortexMethod
+VTK_HOME 		= $(HOME)/vtk
+
+# You will need to set the FFTW_HOME variable for your system, include, and LIB_FLAGS as below to find fftw.
+FFTW_HOME 	 	= /Users/guosiqi/fftw
+
+FFTW_DIR 		?= /usr/local
+FFTW_INCFLAGS 	= -I$(FFTW_DIR)/include
+FFTW_LIBS 	 	= -L$(FFTW_DIR)/lib -lfftw3
+
+#################################
+# Include directories
+#################################
+ALL_INCLUDES = -I. -I$(WRITER_HOME) -I$(TIMER_HOME) -I$(FFT_HOME) -I$(RMDA_HOME) -I$(HOCKNEY_HOME) -I$(VORTEX_HOME) $(FFTW_INCFLAGS)
+
+##################################
+# Library settings
+##################################
+LIBS = $(FFTW_LIBS) -L$(LIBS_LOCAL) -lfft$(DIM)D -lfft1D
+
+LIBTOOL = ar cru 
+ifeq ($(SYSTEM), Darwin)
+  LIBTOOL = libtool -static -s -o
+endif
+
+##################################
+# Object file generation
+##################################
+osuffix:=$(DIM)D.o
+dsuffix:=$(DIM)D.d
+
+%.o: %.cpp GNUmakefile
+	$(CXX) -c $(CFLAGS) $< -o $@
+	$(CXX) -MM $(CFLAGS) $< > $*.d
+
+%$(osuffix): %.cpp GNUmakefile
+	$(CXX) -c $(CFLAGS) $< -o $@
+	$(CXX) -MM $(CFLAGS) $< > $*$(dsuffix)

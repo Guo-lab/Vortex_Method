@@ -1,0 +1,27 @@
+<?xml version="1.0"?>
+<Object name="MeshAttributes">
+    <Field name="legendFlag" type="bool">true</Field>
+    <Field name="lineWidth" type="int">0</Field>
+    <Object name="meshColor">
+        <Object name="ColorAttribute">
+            <Field name="color" type="unsignedCharArray" length="4">0 0 0 255 </Field>
+        </Object>
+    </Object>
+    <Field name="meshColorSource" type="string">Foreground</Field>
+    <Field name="opaqueColorSource" type="string">Background</Field>
+    <Field name="opaqueMode" type="string">Auto</Field>
+    <Field name="pointSize" type="double">0.05</Field>
+    <Object name="opaqueColor">
+        <Object name="ColorAttribute">
+            <Field name="color" type="unsignedCharArray" length="4">255 255 255 255 </Field>
+        </Object>
+    </Object>
+    <Field name="smoothingLevel" type="string">None</Field>
+    <Field name="pointSizeVarEnabled" type="bool">false</Field>
+    <Field name="pointSizeVar" type="string">default</Field>
+    <Field name="pointType" type="int">7</Field>
+    <Field name="opaqueMeshIsAppropriate" type="bool">true</Field>
+    <Field name="showInternal" type="bool">false</Field>
+    <Field name="pointSizePixels" type="int">2</Field>
+    <Field name="opacity" type="double">1</Field>
+</Object>
