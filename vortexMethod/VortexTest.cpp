@@ -141,10 +141,15 @@ int main(int argc, char *argv[]) {
         Particle &particle2 = p.getParticle(1);
         particle2.m_x[0] = .5;
         particle2.m_x[1] = .25;
+        // Opposite-sign vortices move together in a straight line (translational motion)
         particle2.strength = 1. / h / h;
+
     } else if (test == 4) {
-        // Two-patch problem.
+        // Two-patch problem. Vertical
         // M = 7
+        // Two closely spaced vortex patches (collections of vortex particles) with the same vorticity sign
+        // may merge into a single vortex due to mutual attraction and diffusion. This is a classic test for
+        // vortex methods.
         array<double, DIM> xp;
         assert(Np == 256 && cfactor == 2 && N == 128 && hp == 1. / 256 && h == 1. / 128 &&
                "Np = 256, cfactor = 2; N = 128, Np = 1. / hp = cfactor / h = cfactor * N;");
@@ -163,8 +168,9 @@ int main(int argc, char *argv[]) {
                 }
             }
         }
+
     } else if (test == 5) {
-        // Two-patch problem.
+        // Two-patch problem. Horizontal
         // M = 7
         array<double, DIM> xp;
         assert(Np == 256 && cfactor == 2 && N == 128 && hp == 1. / 256 && h == 1. / 128 &&
@@ -184,8 +190,9 @@ int main(int argc, char *argv[]) {
                 }
             }
         }
+
     } else if (test == 6) {
-        // Two-patch problem.
+        // Two-patch problem. Less dense grid with longer time window
         // M = 10
         array<double, DIM> xp;
         Np = 256;
@@ -205,6 +212,140 @@ int main(int argc, char *argv[]) {
                 }
             }
         }
+
+    } else if (test == 7) { // M = 7
+        // Vortex Sheet Roll-Up (Kelvin-Helmholtz Instability)
+        // @see More Kelvin-Helmholtz (The Experiment) - Sixty Symbols
+        // A vortex sheet (a line of closely spaced vortices) is unstable and rolls up into larger vortices
+        // due to the Kelvin-Helmholtz instability.
+        Np = N / cfactor;
+        double x_start = 0.05; // Place particles in x in [0.05, 0.95] to avoid boundaries
+        double x_end = 0.95;
+        double width = x_end - x_start;
+        hp = width / Np;
+        int layers = 9;
+        p.resize(Np * layers);
+
+        // The vorticity field resembles a thin, wavy sheet centered around y = 0.5
+        // with a sinusoidal perturbation in the y-direction.
+        // As time evolves, the perturbation grows and the sheet rolls up into larger vortices.
+        // Each vortex is a tightly wound spiral of particles, with high vorticity concentrated at the centers
+        // and filamentary structures connecting them.
+
+        double perturbation = 0.01; // Perturbation amplitude
+        for (int i = 0; i < Np; i++) {
+            for (int j = 0; j < layers; j++) {
+                Particle &part = p.getParticle(i + j * Np);
+                part.m_x[0] = x_start + i * hp; // x from 0.05 to < 0.95
+                part.m_x[1] = 0.45 + perturbation * sin(2 * M_PI * (part.m_x[0] - x_start) / width);
+                part.strength = hp / h / h / 5; // Uniform vorticity
+                part.m_x[1] += j * 0.0008;      // Offset in y for each layer
+            }
+        }
+    } else if (test == 8) {
+        // @see Leapfrogging Vortex Rings - Reformulated Vortex Particle Method
+        // @see The Science of Vortex Rings
+
+        // Two vortex pairs (each with opposite-signed vortices) are initialized such that one pair passes
+        // through the other, repeating periodically in a leapfrogging motion.
+
+        p.resize(4);
+        // Pair 1: Vortices at (0.75, 0.55) and (0.75, 0.45)
+        Particle &p1 = p.getParticle(0);
+        p1.m_x[0] = 0.75;
+        p1.m_x[1] = 0.55;
+        p1.strength = .1 / h / h;
+
+        Particle &p2 = p.getParticle(1);
+        p2.m_x[0] = 0.75;
+        p2.m_x[1] = 0.45;
+        p2.strength = -0.1 / h / h;
+
+        // Pair 2: Vortices at (0.85, 0.55) and (0.85, 0.45)
+        Particle &p3 = p.getParticle(2);
+        p3.m_x[0] = 0.85;
+        p3.m_x[1] = 0.55;
+        p3.strength = 0.1 / h / h;
+
+        Particle &p4 = p.getParticle(3);
+        p4.m_x[0] = 0.85;
+        p4.m_x[1] = 0.45;
+        p4.strength = -.1 / h / h;
+
+    } else if (test == 9) {
+
+        // Leapfrogging Vortex Rings - Two pairs of vortex patches
+        int particles_per_patch = 9;        ///< 3x3 grid per vortex
+        p.resize(4 * particles_per_patch);  ///< 4 vortices * 9 particles
+        double patch_radius = 0.01;         ///< Patch size
+        double total_strength = .1 / h / h; ///< Strength per vortex
+        double strength_per_particle = total_strength / particles_per_patch;
+
+        // Grid for patch particles (3x3)
+        double offsets[3] = {-patch_radius, 0, patch_radius};
+
+        int idx = 0;
+        for (int v = 0; v < 2; v++) { // Patches centered at (x1, y2) and (x1, y1)
+            double x_center = 0.7;
+            double y_center = 0.55 - v * 0.2;
+            double sign = (v == 0) ? 1.0 : -1.0;
+            for (int i = 0; i < 3; i++) {
+                for (int j = 0; j < 3; j++) {
+                    Particle &part = p.getParticle(idx);
+                    part.m_x[0] = x_center + offsets[i];
+                    part.m_x[1] = y_center + offsets[j];
+                    part.strength = sign * strength_per_particle;
+                    idx++;
+                }
+            }
+        }
+
+        for (int v = 0; v < 2; v++) { // Patches centered at (x2, y2) and (x2, y1)
+            double x_center = 0.8;
+            double y_center = 0.55 - v * 0.2;
+            double sign = (v == 0) ? 1.0 : -1.0;
+            for (int i = 0; i < 3; i++) {
+                for (int j = 0; j < 3; j++) {
+                    Particle &part = p.getParticle(idx);
+                    part.m_x[0] = x_center + offsets[i];
+                    part.m_x[1] = y_center + offsets[j];
+                    part.strength = sign * strength_per_particle;
+                    idx++;
+                }
+            }
+        }
+
+    } else if (test == 10) {
+
+        // Periodic Vortex Array (Karman Vortex Street Approximation)
+        // @see Von Karman Street of Vortices (2) Experimental observations
+
+        int numVortices = 64; // Two rows of 4 vortices
+        int halfNumVortices = numVortices / 2;
+        p.resize(numVortices);
+
+        double dx = 0.01; // Horizontal spacing for stability
+        double dy = 0.03;
+
+        double x_start = 0.5;
+        double y_top = 0.55;
+        double y_bottom = y_top - dy;
+        double strength = 0.006 / h / h;
+
+        for (int i = 0; i < halfNumVortices; i++) {
+            // Top row: Positive vortices
+            Particle &p1 = p.getParticle(i);
+            p1.m_x[0] = x_start + i * dx;
+            p1.m_x[1] = y_top;
+            p1.strength = strength;
+
+            // Bottom row: Negative vortices, staggered
+            Particle &p2 = p.getParticle(i + halfNumVortices);
+            p2.m_x[0] = x_start + (i + 0.5) * dx;
+            p2.m_x[1] = y_bottom;
+            p2.strength = -strength;
+        }
+
     } else {
         array<double, DIM> xp;
 
@@ -258,6 +399,16 @@ int main(int argc, char *argv[]) {
         integrator.advance(time, dt, p);
 
         time = time + dt;
+
+#define TEST89
+#ifdef TEST89
+        for (int k = 0; k < p.getSize(); k++) {
+            Particle &part = p.getParticle(k);
+            part.m_x[0] = std::max(0.0, std::min(1.0, part.m_x[0]));
+            part.m_x[1] = std::max(0.0, std::min(1.0, part.m_x[1]));
+        }
+#endif
+
         if (i % 10 == 0) {
             cout << "time = " << time << "  dt " << dt << endl;
         }

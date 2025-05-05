@@ -1,0 +1,66 @@
+@startuml Particle_in_Cell_Workflow
+
+participant "ParticleVelocities" as PV
+participant "ParticleSet" as PS
+participant "Hockney" as H
+participant "FFTMD" as FM
+participant "ConvKernel" as CK
+
+note over PV: Calculate particle velocities
+
+activate PV
+PV -> PV: Create vorticity grid
+loop For each particle
+    PV -> PV: Deposit particle strength to grid
+end
+
+PV -> PS: Access m_hockney
+activate PS
+PS --> PV: Return Hockney instance
+deactivate PS
+
+PV -> H: convolve(vorticity_grid)
+activate H
+note over H: Solves Poisson equation ∇²ψ = -ω
+
+H -> H: Prepare extended domain
+
+H -> CK: getKernel(kernel, h)
+activate CK
+note over CK: Create Green's function kernel
+CK --> H: Return filled kernel array
+deactivate CK
+
+H -> FM: forwardCCcen(rhsDouble)
+activate FM
+note over FM: FFT of vorticity
+FM --> H: Return frequency domain
+deactivate FM
+
+H -> FM: forwardCCcen(kernel)
+activate FM
+note over FM: FFT of kernel
+FM --> H: Return frequency domain
+deactivate FM
+
+H -> H: Multiply arrays in frequency domain
+
+H -> FM: inverseCCcen(rhsDouble)
+activate FM
+note over FM: Inverse FFT
+FM --> H: Return stream function
+deactivate FM
+
+H --> PV: Return stream function (in place)
+deactivate H
+
+PV -> PV: Calculate velocity field using finite differences
+note over PV: U = (∂ψ/∂y, -∂ψ/∂x)
+
+loop For each particle
+    PV -> PV: Interpolate velocities to particle
+    PV -> PV: Scale by dt and store in a_k
+end
+deactivate PV
+
+@enduml

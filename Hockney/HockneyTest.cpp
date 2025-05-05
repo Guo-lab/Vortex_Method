@@ -45,6 +45,13 @@ void testHockneyInitialization() {
     std::cout << "√" << std::endl;
 }
 
+// Define test points (relative to center) to check the potential
+struct TestPoint {
+    int offset_x;
+    int offset_y;
+};
+
+
 /**
  * @brief Test Hockney solver with a single point source to verify Green's function behavior.
  * Verifies that G * rho matches the theoretical Green's function: ln(r)/(4pi) for r > delta.
@@ -78,12 +85,6 @@ void testSinglePointSourceGreenFunction() {
 
     // Perform convolution
     hockney.convolve(rho);
-
-    // Define test points (relative to center) to check the potential
-    struct TestPoint {
-        int offset_x;
-        int offset_y;
-    };
 
     // =========== Test the Green's function with Proportional ratios ================
     std::vector<std::pair<int, int>> offsets = {{16, 0}, {32, 0}, {48, 0}};
@@ -121,7 +122,7 @@ void testSinglePointSourceGreenFunction() {
 
     // =========== Test the Green's function with equality ================
     auto theoretical_actual_value = [h](double r) { return std::log(r) / (2.0 * M_PI); };
-    
+
     std::vector<std::pair<TestPoint, TestPoint>> testPoints_2 = {
         {{28, 0}, {-28, 0}},    // x-axis symmetry
         {{0, 28}, {0, -28}},    // y-axis symmetry
@@ -197,14 +198,6 @@ void hockneyTest(const int &a_M) {
     for (Point pt = low; b.notDone(pt); b.increment(pt)) {
         double r = std::sqrt(std::pow(pt[0] * h - .5, 2) + std::pow(pt[1] * h - .5, 2)) / r0;
         if (r < 1.) {
-            //    .  .  .  .  .  .  .  .
-            //    .  .  .  *  *  .  .  .
-            //    .  .  *  *  *  *  .  .
-            //    .  *  *  *  *  *  *  .
-            //    .  .  *  *  *  *  .  .
-            //    .  .  .  *  *  .  .  .
-            //    .  .  .  .  .  .  .  .
-            //    .  .  .  .  .  .  .  .
             rho[pt] = std::pow(std::cos(M_PI * r / 2), 6);
             rhoSave[pt] = rho[pt];
         }
@@ -259,13 +252,11 @@ void testProvidedNormTest(int M) {
 
 
 
-
-
 /**
  * @brief Test Hockney solver with two point sources to verify
  * wheter the potential at the middle of the two sources (+/-) is zero.
  */
-void testTwoPointSources() {
+void testTwoPointSourcesGreenFunction() {
     std::cout << std::endl << "Testing Hockney with two point sources..." << std::endl;
 
     constexpr int M = 7; // 2D grid, 128x128
@@ -316,7 +307,242 @@ void testTwoPointSources() {
 }
 
 
+void testBoundaryPointSourceGreenFunction() {
+    std::cout << std::endl << "Testing Hockney with a point source near the boundary..." << std::endl;
 
+    constexpr int M = 7;
+    constexpr int N = 1 << M;
+    constexpr double h = 1.0 / N;
+    constexpr double delta = 0.125;
+    constexpr double tolerance = 1e-4;
+
+    static_assert(DIM == 2, "This test is designed for 2D.");
+
+    DBox domain(getZeros(), getOnes() * N);
+    RectMDArray<double> rho(domain);
+    rho.setVal(0.0);
+
+    Point boundaryPoint;
+    boundaryPoint[0] = 0;
+    boundaryPoint[1] = N - 1;
+    rho[boundaryPoint] = 10000.0;
+
+    auto cutoffKernel = std::make_shared<CutoffKernel>(h, delta);
+    std::shared_ptr<ConvKernel> convkerptr = dynamic_pointer_cast<ConvKernel>(cutoffKernel);
+    Hockney hockney(convkerptr, h, M);
+    hockney.convolve(rho);
+
+    std::vector<std::pair<int, int>> offsets = {{16, 0}, {32, 0}, {48, 0}};
+    std::vector<Point> testPoints;
+    for (auto [dx, dy] : offsets) {
+        Point p = boundaryPoint;
+        p[0] += dx;
+        p[1] += dy;
+        if (domain.contains(p)) {
+            testPoints.push_back(p);
+        }
+    }
+
+    if (testPoints.size() >= 3) {
+        double phi_A = rho[testPoints[0]], phi_B = rho[testPoints[1]], phi_C = rho[testPoints[2]];
+        double delta_phi_AB = phi_A - phi_B, delta_phi_CB = phi_C - phi_B;
+        double numerical_ratio = delta_phi_AB / delta_phi_CB;
+
+        double r_A = 16 * h, r_B = 32 * h, r_C = 48 * h;
+        double theoretical_ratio = std::log(r_A / r_B) / std::log(r_C / r_B);
+        if (std::abs(numerical_ratio - theoretical_ratio) < tolerance)
+            std::cout << "Boundary point source test passed: Proportional ratio correct at points ("
+                      << testPoints[0][0] << ", " << testPoints[0][1] << "), (" << testPoints[1][0] << ", "
+                      << testPoints[1][1] << "), and (" << testPoints[2][0] << ", " << testPoints[2][1]
+                      << ")." << std::endl;
+        else
+            assert(false && "Boundary point source test failed!");
+    } else
+        assert(false && "Insufficient test points!");
+
+    MDWrite("rho_boundary_source", rho);
+    std::cout << "√" << std::endl;
+}
+
+
+void testMultipoleCancellation() {
+    static_assert(DIM == 2, "This test is designed for 2D.");
+    std::cout << std::endl << "Testing Hockney with point sources (multipole cancellation)..." << std::endl;
+    constexpr int M = 10; ///< 512x512
+    constexpr int N = 1 << M;
+    constexpr double h = 1.0 / N;
+    constexpr double delta = 0.125;
+    constexpr double tolerance = 5 * 1e-6;
+
+    DBox domain(getZeros(), getOnes() * N);
+    RectMDArray<double> rho(domain);
+    rho.setVal(0.0);
+
+    // Check the cancellation of the multipole source points in the center
+    Point center;
+    for (int dir = 0; dir < DIM; dir++) center[dir] = N / 2; // e.g., (256, 256) for N=512
+    constexpr double q = 1000.0;                             // Charge magnitude
+    int radius = 400;                                        // Radius of the shape
+
+    std::vector<std::vector<TestPoint>> tests = {
+        // Quadrilateral (n=4)
+        {{radius, 0}, {0, radius}, {-radius, 0}, {0, -radius}},
+        // Hexagon (n=6)
+        {{radius, 0},
+         {static_cast<int>(radius * std::cos(M_PI / 3)), static_cast<int>(radius * std::sin(M_PI / 3))},
+         {static_cast<int>(radius * std::cos(2 * M_PI / 3)),
+          static_cast<int>(radius * std::sin(2 * M_PI / 3))},
+         {-radius, 0},
+         {static_cast<int>(radius * std::cos(4 * M_PI / 3)),
+          static_cast<int>(radius * std::sin(4 * M_PI / 3))},
+         {static_cast<int>(radius * std::cos(5 * M_PI / 3)),
+          static_cast<int>(radius * std::sin(5 * M_PI / 3))}},
+        // Octagon (n=8)
+        {{radius, 0},
+         {static_cast<int>(radius * std::cos(M_PI / 4)), static_cast<int>(radius * std::sin(M_PI / 4))},
+         {0, radius},
+         {static_cast<int>(radius * std::cos(3 * M_PI / 4)),
+          static_cast<int>(radius * std::sin(3 * M_PI / 4))},
+         {-radius, 0},
+         {static_cast<int>(radius * std::cos(5 * M_PI / 4)),
+          static_cast<int>(radius * std::sin(5 * M_PI / 4))},
+         {0, -radius},
+         {static_cast<int>(radius * std::cos(7 * M_PI / 4)),
+          static_cast<int>(radius * std::sin(7 * M_PI / 4))}},
+        // Dodecagon (n=12)
+        {{radius, 0},
+         {static_cast<int>(radius * std::cos(M_PI / 6)), static_cast<int>(radius * std::sin(M_PI / 6))},
+         {static_cast<int>(radius * std::cos(M_PI / 3)), static_cast<int>(radius * std::sin(M_PI / 3))},
+         {0, radius},
+         {static_cast<int>(radius * std::cos(2 * M_PI / 3)),
+          static_cast<int>(radius * std::sin(2 * M_PI / 3))},
+         {static_cast<int>(radius * std::cos(5 * M_PI / 6)),
+          static_cast<int>(radius * std::sin(5 * M_PI / 6))},
+         {-radius, 0},
+         {static_cast<int>(radius * std::cos(7 * M_PI / 6)),
+          static_cast<int>(radius * std::sin(7 * M_PI / 6))},
+         {static_cast<int>(radius * std::cos(4 * M_PI / 3)),
+          static_cast<int>(radius * std::sin(4 * M_PI / 3))},
+         {0, -radius},
+         {static_cast<int>(radius * std::cos(5 * M_PI / 3)),
+          static_cast<int>(radius * std::sin(5 * M_PI / 3))},
+         {static_cast<int>(radius * std::cos(11 * M_PI / 6)),
+          static_cast<int>(radius * std::sin(11 * M_PI / 6))}}};
+    std::vector<std::string> shapes = {"quadrilateral", "hexagon", "octagon", "dodecagon"};
+    std::vector<int> num_sources_list = {4, 6, 8, 12};
+
+    for (size_t config_idx = 0; config_idx < tests.size(); ++config_idx) {
+        const auto &test = tests[config_idx];
+        int num_sources = num_sources_list[config_idx];
+        const std::string &shape = shapes[config_idx];
+        rho.setVal(0.0);
+
+        // Place charges
+        for (size_t i = 0; i < test.size(); ++i) {
+            Point src;
+            src[0] = center[0] + test[i].offset_x;
+            src[1] = center[1] + test[i].offset_y;
+            if (!domain.contains(src)) {
+                std::cout << "Source point " << src << " is out of domain for " << shape << ". Skipping..."
+                          << std::endl;
+                assert(false && "Source point out of domain!");
+            }
+            // Alternate charges: +q for even i, -q for odd i
+            rho[src] = (i % 2 == 0) ? q : -q;
+        }
+
+        auto cutoffKernel = std::make_shared<CutoffKernel>(h, delta);
+        std::shared_ptr<ConvKernel> convkerptr = dynamic_pointer_cast<ConvKernel>(cutoffKernel);
+        Hockney hockney(convkerptr, h, M);
+        hockney.convolve(rho);
+
+        // Check potential at the center
+        double phi_center = rho[center];
+        if (std::abs(phi_center) < tolerance)
+            std::cout << "Balance point test passed: Potential at center is " << phi_center
+                      << " within tolerance for " << shape << " configuration." << std::endl;
+        else {
+            std::cout << "The phi at the center (" << center[0] << ", " << center[1]
+                      << ") is not zero: " << phi_center << std::endl;
+            assert(false && "Balance point test failed!");
+        }
+        std::string MD_filename = "rho_multipole_" + std::to_string(num_sources) + "_" + shape;
+        const char *MD_filename_cstr = MD_filename.c_str();
+        MDWrite(MD_filename_cstr, rho);
+    }
+
+    std::cout << "√" << std::endl;
+}
+
+
+
+void testMultipoleChannel() {
+    static_assert(DIM == 2, "This test is designed for 2D.");
+    std::cout << std::endl << "Testing Hockney with point sources (channel)..." << std::endl;
+    constexpr int M = 10; ///< 512x512
+    constexpr int N = 1 << M;
+    constexpr double h = 1.0 / N;
+    constexpr double delta = 0.125;
+    constexpr double tolerance = 5 * 1e-6;
+
+    DBox domain(getZeros(), getOnes() * N);
+    RectMDArray<double> rho(domain);
+    rho.setVal(0.0);
+
+    Point center_1, center_2;
+    center_1[0] = N / 2 - 5;
+    center_1[1] = N / 2;
+    center_2[0] = N / 2 + 5;
+    center_2[1] = N / 2;
+    Point origin;
+    for (int dir = 0; dir < DIM; dir++) origin[dir] = 0;
+    constexpr double q = 10000.0;
+    int segment = 150;
+
+    std::vector<std::vector<TestPoint>> tests = {{{segment, N / 3},
+                                                  {segment * 2, N / 3},
+                                                  {segment * 3, N / 3},
+                                                  {segment * 4, N / 3},
+                                                  {segment * 5, N / 3},
+                                                  {segment * 6, N / 3},
+                                                  {segment, N * 2 / 3},
+                                                  {segment * 2, N * 2 / 3},
+                                                  {segment * 3, N * 2 / 3},
+                                                  {segment * 4, N * 2 / 3},
+                                                  {segment * 5, N * 2 / 3},
+                                                  {segment * 6, N * 2 / 3}}};
+
+    const auto &test = tests[0];
+    rho.setVal(0.0);
+
+    // Place charges
+    for (size_t i = 0; i < test.size(); ++i) {
+        Point src;
+        src[0] = origin[0] + test[i].offset_x;
+        src[1] = origin[1] + test[i].offset_y;
+        if (!domain.contains(src)) {
+            std::cout << "Source point " << src << " is out of domain. Skipping..." << std::endl;
+            assert(false && "Source point out of domain!");
+        }
+        rho[src] = (i < test.size() / 2) ? q : -q;
+    }
+
+    auto cutoffKernel = std::make_shared<CutoffKernel>(h, delta);
+    std::shared_ptr<ConvKernel> convkerptr = dynamic_pointer_cast<ConvKernel>(cutoffKernel);
+    Hockney hockney(convkerptr, h, M);
+    hockney.convolve(rho);
+
+    // Check potential at the center
+    double phi_in_channel_1 = rho[center_1];
+    double phi_in_channel_2 = rho[center_2];
+    if (std::abs(phi_in_channel_1 - phi_in_channel_2) < tolerance)
+        std::cout << "Balance point test passed: Potential same in the cahnnel within tolerance" << std::endl;
+    else
+        assert(false && "Balance point test failed!");
+
+    MDWrite("rho_multipole_channel", rho);
+    std::cout << "√" << std::endl;
+}
 
 
 int main(int argc, char *argv[]) {
@@ -332,7 +558,11 @@ int main(int argc, char *argv[]) {
     testHockneyInitialization();
 
     testSinglePointSourceGreenFunction();
-    testTwoPointSources();
+    testTwoPointSourcesGreenFunction();
+    testBoundaryPointSourceGreenFunction();
+
+    testMultipoleCancellation();
+    testMultipoleChannel();
 
     testProvidedNormTest(M);
 
