@@ -1,0 +1,346 @@
+@startuml VortexSimulation
+
+' Styling configuration
+skinparam linetype ortho
+' skinparam ClassBackgroundColor LightBlue
+' skinparam ClassBorderColor DarkBlue
+skinparam ClassFontColor Black
+' skinparam ClassFontSize 12
+' skinparam ClassAttributeFontColor Black
+' skinparam ClassAttributeFontSize 10
+skinparam ArrowColor DarkBlue
+skinparam BackgroundColor White
+
+' skinparam DefaultFontName Arial
+skinparam DefaultFontStyle plain
+skinparam ClassAttributeFontStyle plain
+skinparam ClassStereotypeFontStyle plain
+
+left to right direction
+skinparam nodesep 30
+skinparam ranksep 2
+skinparam padding 0
+' skinparam ClassBackgroundColor White
+' skinparam ClassBorderColor #333333
+
+
+' ==== FOUNDATION CLASSES ====
+
+' Geometric Foundation
+package "Geometric Foundation" #DAEEF3 {
+class Point {
+  -m_tuple: array<int, DIM>
+  +Point()
+  +Point(a_tuple: int[])
+  +Point(a_tuple: array<int, DIM>)
+  +Point(a_pt: Point)
+  +operator[](a_index: int): int&
+  +operator+(a_rhsPoint: Point): Point
+  +operator-(a_rhsPoint: Point): Point
+  +operator*(a_pt: Point): Point
+  +operator/(a_pt: Point): Point
+  +operator*(a_nref: int): Point
+  +operator/(a_nref: int): Point
+  +operator==(a_pt: Point): bool
+  +operator!=(a_pt: Point): bool
+  +print()
+  +print_raw()
+}
+
+class DBox {
+  -m_lowCorner: Point
+  -m_highCorner: Point
+  -m_size: unsigned int
+  -recomputeSize()
+  +DBox()
+  +DBox(a_lowCorner: Point, a_highCorner: Point)
+  +DBox(a_box: DBox)
+  +operator&(a_rightDBox: DBox): DBox
+  +operator&=(a_rightDBox: DBox)
+  +shift(a_direction: int, a_offset: int): DBox
+  +shift(a_pt: Point): DBox
+  +grow(a_numpoints: int): DBox
+  +grow(a_pt: Point): DBox
+  +coarsen(a_numpoints: int): DBox
+  +coarsen(a_pt: Point): DBox
+  +refine(a_numpoints: int): DBox
+  +refine(a_pt: Point): DBox
+  +getLowCorner(): Point&
+  +getHighCorner(): Point&
+  +sizeOf(): unsigned int
+  +contains(a_pt: Point): bool
+  +contains(a_rhs: DBox): bool
+  +mod(a_pt: Point): Point
+  +getIndex(a_pt: Point): unsigned int
+  +getPoint(k: unsigned int): Point
+  +notDone(a_pt: Point): bool
+  +size(a_dim: int): unsigned int
+  +increment(a_pt: Point)
+  +isEmpty(): bool
+}
+
+' Grid/Array classes
+class RectMDArray<T, C> {
+  -m_box: DBox
+  -m_rawPtr: T*
+  +RectMDArray()
+  +RectMDArray(a_box: DBox)
+  +define(a_box: DBox)
+  +setVal(a_val: T)
+  +getDBox(): DBox
+  +copyTo(a_dest: RectMDArray<T, C>)
+  +operator[](a_iv: Point): T&
+  +operator()(a_iv: Point, a_comp: unsigned int): T&
+  +dataSize(): unsigned int
+  +defined(): bool
+  +getPointer(): T*
+}
+}
+' ==== PARTICLE SYSTEM ====
+
+package "Particle System" #E1DFEC {
+class DX {
+  +m_x: array<double, DIM>
+  +DX()
+  +increment(a_scale: double, a_rhs: DX)
+  +operator*=(a_scale: double)
+}
+
+class Particle {
+  +m_x: array<double, DIM>
+  +strength: double
+  +increment(a_shift: DX)
+}
+
+class ParticleShift {
+  -m_particles: vector<DX>
+  +ParticleShift()
+  +init(a_particles: ParticleSet)
+  +increment(a_scale: double, a_rhs: ParticleShift)
+  +operator*=(a_scale: double)
+  +setToZero()
+  +getShift(i: size_t): DX&
+  +getSize(): size_t
+}
+
+class ParticleSet {
+  -m_particles: vector<Particle>
+  +m_dx: double
+  +m_box: DBox
+  +m_lowCorner: double[DIM]
+  +m_hockney: Hockney
+  +ParticleSet()
+  +ParticleSet(a_kerptr: shared_ptr<ConvKernel>, a_box: DBox, a_dx: double, a_lowCorner: array<double, DIM>, a_M: int)
+  +increment(a_shift: ParticleShift)
+  +getSize(): size_t
+  +getParticle(i: size_t): Particle&
+  +resize(size: size_t)
+  +reserve(capacity: size_t)
+  +addParticle(particle: Particle)
+  +addParticle(coord: array<double, DIM>, strength: double)
+  +getH(): double
+}
+
+class ParticleVelocities {
+  +ParticleVelocities()
+  +operator()(a_k: ParticleShift, a_time: double, a_dt: double, a_state: ParticleSet)
+  +computeDisplacementIncrement(a_k: ParticleShift, a_time: double, a_dt: double, a_state: ParticleSet)
+  +computeDisplacementIncrement_detailed_v0(a_k: ParticleShift, a_time: double, a_dt: double, a_state: ParticleSet)
+}
+}
+
+' ==== FFT AND CONVOLUTION SYSTEM ====
+
+' FFT System
+package "FFT System" #FFF2CC {
+skinparam ClassAttributeFontStyle plain
+abstract class FFT1D {
+  #m_M: unsigned int
+  #m_N: unsigned int
+  +FFT1D()
+  +FFT1D(a_M: unsigned int)
+  +~FFT1D()
+  +forwardFFTCC(a_fHat: vector<complex<double>>, f: vector<complex<double>>): void {abstract}
+  +inverseFFTCC(a_f: vector<complex<double>>, a_fHat: vector<complex<double>>): void {abstract}
+  +getN(): unsigned int
+  +getM(): unsigned int
+}
+skinparam ClassAttributeFontStyle plain
+
+class FFTW1D {
+  #m_in: vector<complex<double>>
+  #m_out: vector<complex<double>>
+  #m_forward: fftw_plan
+  #m_inverse: fftw_plan
+  +FFTW1D(a_M: unsigned int)
+  +~FFTW1D()
+  +forwardFFTCC(a_fHat: vector<complex<double>>, f: vector<complex<double>>): void
+  +inverseFFTCC(a_f: vector<complex<double>>, a_fHat: vector<complex<double>>): void
+}
+
+class FFTMD {
+  -m_N: int
+  -m_M: int
+  -m_fft1dPtr: shared_ptr<FFT1D>
+  +FFTMD()
+  +FFTMD(a_fft1dPtr: shared_ptr<FFT1D>)
+  +define(a_fft1dPtr: shared_ptr<FFT1D>)
+  +forwardCC(a_f: RectMDArray<complex<double>>)
+  +inverseCC(a_fHat: RectMDArray<complex<double>>)
+  +forwardCCcen(a_f: RectMDArray<complex<double>>)
+  +inverseCCcen(a_fHat: RectMDArray<complex<double>>)
+  +getN(): int
+  +getM(): int
+  +isDefined(): bool
+  -getIOVectors(): pair<vector<complex<double>>, vector<complex<double>>>
+  -createBaseDBox(a_dir: int, a_centered: bool): DBox
+  -gatherData(a_f1d: vector<complex<double>>, a_array: RectMDArray<complex<double>>, a_pt: Point, a_edir: Point, a_centered: bool)
+  -assignData(a_array: RectMDArray<complex<double>>, a_result: vector<complex<double>>, a_pt: Point, a_edir: Point, a_centered: bool)
+}
+}
+
+
+' Convolution System
+package "Convolution System"  #E2F0D9 {
+abstract class ConvKernel {
+  +ConvKernel()
+  +~ConvKernel()
+  +getKernel(a_srcArray: RectMDArray<complex<double>>, a_h: double): void {abstract}
+}
+
+class CutoffKernel {
+  -m_h: double
+  -m_delta: double
+  +CutoffKernel()
+  +~CutoffKernel()
+  +CutoffKernel(a_h: double, a_delta: double)
+  +getKernel(a_kerArray: RectMDArray<complex<double>>, a_h: double): void
+}
+
+class Hockney {
+  #m_h: double
+  #m_M: int
+  #m_N: int
+  #m_fftmd: FFTMD
+  #m_kerPtr: shared_ptr<ConvKernel>
+  #m_isDefined: bool
+  +Hockney()
+  +Hockney(a_kerPtr: shared_ptr<ConvKernel>, a_h: double, a_M: int)
+  +define(a_kerPtr: shared_ptr<ConvKernel>, a_h: double, a_M: int)
+  +validateInputDomain(a_rhs: RectMDArray<double>)
+  +createExpandedDomain(a_origDomain: DBox): DBox
+  +prepareComplexArrays(a_rhs: RectMDArray<double>, a_expandedDomain: DBox): pair<RectMDArray<complex<double>>, RectMDArray<complex<double>>>
+  +performFFTOperations(a_rhsComplex: RectMDArray<complex<double>>, a_kernelComplex: RectMDArray<complex<double>>)
+  +convolve(a_rhs: RectMDArray<double>)
+  +isDefined(): bool
+  +getM(): int
+  +getN(): int
+  +getH(): double
+  +getKernel(): ConvKernel&
+}
+}
+
+' ==== INTEGRATION SYSTEM ====
+
+package "Integration System" #FCE4D6 {
+class RK4<X, F, dX> {
+  #m_k: dX
+  #m_delta: dX
+  #m_f: F
+  +advance(a_time: double, a_dt: double, a_state: X)
+}
+}
+
+
+package "Output & Visualization" #D5E8D4 {
+  class VisitWriter #D5E8D4 {
+    +write_point_mesh()
+    +write_unstructured_mesh()
+    +write_regular_mesh()
+  }
+  
+  class WriteRectMDArray #D5E8D4 {
+    +MDWrite()
+    +PWrite()
+  }
+}
+
+' ==== RELATIONSHIPS ====
+
+' Core relationships
+DBox -right-> Point: uses
+RectMDArray -right-> DBox: contains
+
+' Particle relationships
+ParticleSet -right-> "many" Particle: contains
+ParticleSet -up-> DBox: contains
+ParticleSet -[thickness=5]right-> Hockney: contains
+ParticleShift -right-> "many" DX: contains
+Particle -right-> DX: uses
+
+
+' Writer relationships
+WriteRectMDArray -[#blue]-> RectMDArray: writes
+WriteRectMDArray -[#blue]-> ParticleSet: writes
+VisitWriter -[#blue]-> RectMDArray: writes VTK format
+
+
+' FFT and Convolution relationships
+FFTW1D -up-|> FFT1D: implements
+FFTMD -right-> FFT1D: uses
+FFTMD -up-> Point: uses
+FFTMD -down-> DBox: uses
+FFTMD -up-> RectMDArray: operates on
+
+Hockney -right-> ConvKernel: uses
+Hockney -[thickness=5]down-> FFTMD: contains
+Hockney -up-> RectMDArray: operates on
+Hockney -up-> DBox: uses
+
+CutoffKernel -up-|> ConvKernel: implements
+ConvKernel -up-> RectMDArray: operates on
+
+' Integration relationships
+RK4 -up-> ParticleSet: uses
+RK4 -up-> ParticleShift: uses
+RK4 -[thickness=3]up-> ParticleVelocities: uses
+ParticleVelocities -[thickness=3]down-> ParticleShift: operates on
+ParticleVelocities -[thickness=3]down-> ParticleSet: operates on
+
+' Simplified relationship
+ParticleShift -up-> ParticleSet: references
+
+
+' ' Layout optimization
+' Geometric_Foundation -[hidden]right- Particle_System
+' Particle_System -[hidden]right- FFT_System
+' FFT_System -[hidden]right- Convolution_System
+' Convolution_System -[hidden]right- Integration
+' Integration -[hidden]right- Output_Visualization
+
+' Hidden connections to enforce clustering
+Point -[hidden]- DBox
+DBox -[hidden]- RectMDArray
+DX -[hidden]- Particle
+Particle -[hidden]- ParticleShift
+FFT1D -[hidden]- FFTW1D
+FFTW1D -[hidden]- FFTMD
+ConvKernel -[hidden]- CutoffKernel
+VisitWriter -[hidden]- WriteRectMDArray
+
+' Legend for layer colors
+legend
+  Layer Color Legend:
+  <back:#DAEEF3>     </back> Foundation Layer
+  <back:#E1DFEC>     </back> Particle System Layer
+  <back:#FFF2CC>     </back> FFT Layer
+  <back:#E2F0D9>     </back> Convolution Layer
+  <back:#FCE4D6>     </back> Integration Layer
+  <back:#D5E8D4>     </back> Output & Visualization Layer
+  
+  Line Thickness:
+  ——     Standard relationship
+  ===     Critical relationship
+end legend
+
+@enduml

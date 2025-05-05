@@ -1,0 +1,165 @@
+@startuml Vortex_Particle_Method_Workflow
+
+
+' Use a better color scheme and styling
+skinparam sequence {
+    ArrowColor DeepSkyBlue
+    ActorBorderColor DeepSkyBlue
+    LifeLineBorderColor blue
+    LifeLineBackgroundColor #A9DCDF
+    
+    ParticipantBorderColor DeepSkyBlue
+    ParticipantBackgroundColor #DAEEF3
+    ParticipantFontColor #333333
+    
+    ActorBackgroundColor #DAEEF3
+    ActorFontColor #333333
+}
+
+' Define all participants
+participant "RK4" as RK
+participant "ParticleVelocities" as PV
+participant "ParticleSet" as PS
+participant "Hockney" as H
+participant "ConvKernel" as CK
+participant "FFTMD" as FM
+participant "RectMDArray" as RA
+
+' Start the workflow with RK4 since it calls the particle velocities
+title Vortex Particle Method: Velocity Computation & Poisson Solving Workflow (With AI assistence)
+
+RK -> PV: operator(a_k, a_time, a_dt, a_state)
+activate PV
+
+' Step 1: Initialize grids and arrays
+note over PV: computeDisplacementIncrement
+PV -> PS: getH()
+activate PS
+PS --> PV: h
+deactivate PS
+
+PV -> RA: Create vorticity, stream function & velocity grids
+activate RA
+RA --> PV: omega_grid, psi_grid, U_grid
+deactivate RA
+
+' Step 2: Deposit particle vorticity to grid
+note over PV #FCE4D6: Step 1: Deposit vorticity to grid
+PV -> RA: setVal(0.0)
+activate RA
+deactivate RA
+
+loop For each particle k in a_state
+    PV -> PS: getParticle(k)
+    activate PS
+    PS --> PV: Particle with position and strength
+    deactivate PS
+    
+    PV -> PV: Transform particle to grid coordinates
+    PV -> PV: Calculate interpolation weights
+    
+    note right of PV
+        Apply bilinear interpolation weights:
+        (1-s₀)(1-s₁), s₀(1-s₁), (1-s₀)s₁, s₀s₁
+    end note
+    
+    PV -> RA: Add weighted particle strength to grid points
+    activate RA
+    deactivate RA
+end
+
+' Step 3: Solve Poisson equation
+note over PV #FCE4D6: Step 2: Solve Poisson equation
+PV -> PS: Access m_hockney
+activate PS
+PS --> PV: Return Hockney instance
+deactivate PS
+
+PV -> H: convolve(omega_grid)
+activate H
+
+H -> H: validateInputDomain()
+H -> H: createExpandedDomain()
+H -> H: prepareComplexArrays()
+
+H -> CK: getKernel(kernelComplex, h)
+activate CK
+note over CK
+    Create Green's function:
+    ln(r)/4π for r > δ
+    Polynomial for r ≤ δ
+end note
+CK --> H: Filled kernel array
+deactivate CK
+
+H -> FM: forwardCCcen(rhsComplex)
+activate FM
+FM --> H: Vorticity in frequency domain
+deactivate FM
+
+H -> FM: forwardCCcen(kernelComplex)
+activate FM
+FM --> H: Kernel in frequency domain
+deactivate FM
+
+H -> H: Multiply arrays in frequency domain
+note right of H
+    Convolution becomes multiplication
+    in frequency domain
+end note
+
+H -> FM: inverseCCcen(rhsComplex)
+activate FM
+FM --> H: Return to spatial domain
+deactivate FM
+
+H -> RA: Extract & scale result to stream function
+activate RA
+RA --> H: Updated grid
+deactivate RA
+
+H --> PV: Return stream function (psi_grid updated in place)
+deactivate H
+
+' Step 4: Compute velocity field
+note over PV #FCE4D6: Step 3: Compute velocity field
+PV -> PV: Create interior domain for finite differences
+
+loop For each grid point in interior domain
+    PV -> RA: Access neighboring stream function values
+    activate RA
+    RA --> PV: Stream function values
+    deactivate RA
+    
+    PV -> PV: U[i,j].x = (ψ[i,j+1] - ψ[i,j-1])/(2h)
+    PV -> PV: U[i,j].y = -(ψ[i+1,j] - ψ[i-1,j])/(2h)
+    
+    PV -> RA: Store velocity components in U_grid
+    activate RA
+    deactivate RA
+end
+
+' Step 5: Interpolate velocities back to particles
+note over PV #FCE4D6: Step 4: Interpolate velocities to particles
+loop For each particle k
+    PV -> PS: getParticle(k)
+    activate PS
+    PS --> PV: Particle with position
+    deactivate PS
+    
+    PV -> PV: Transform particle to grid coordinates
+    PV -> PV: Calculate interpolation weights
+    
+    PV -> RA: Access velocity values at surrounding points
+    activate RA
+    RA --> PV: Velocity vector components
+    deactivate RA
+    
+    PV -> PV: Interpolate velocity to particle position
+    PV -> PV: a_k.getShift(k).m_x[d] = dt * U_k[d]
+end
+
+PV --> RK: Return particle shifts in a_k
+deactivate PV
+
+@enduml
